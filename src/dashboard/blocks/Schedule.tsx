@@ -34,12 +34,6 @@ function tomorrow() {
 
 /* ===================== TIME PARSE ===================== */
 
-// "8:00" -> минуты
-function parseTime(str: string) {
-  const [h, m] = str.split(':').map(Number);
-  return h * 60 + m;
-}
-
 // дата + время -> timestamp (МСК)
 function getItemTime(item: Item, type: 'start' | 'end') {
   const [h, m] = item[type].split(':').map(Number);
