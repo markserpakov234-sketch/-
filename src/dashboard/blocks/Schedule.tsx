@@ -6,40 +6,58 @@ const URL =
 
 type Item = {
   date: string;
-  start: string;
-  end: string;
+  start: string; // "8:00"
+  end: string;   // "8:15"
   title: string;
   place: string;
   type: string;
 };
 
-/* ===================== FIX GOOGLE TIME ===================== */
+/* ===================== TIME (MSK ONLY) ===================== */
 
-// "1899-12-30T05:29:43.000Z" -> minutes of day
-function parseGoogleTime(iso: string) {
-  const d = new Date(iso);
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
+function getMoscowNow() {
+  const now = new Date();
+  return new Date(
+    now.toLocaleString('en-US', { timeZone: 'Europe/Moscow' })
+  );
 }
 
-// "2026-04-22T00:00:00.000Z" -> YYYY-MM-DD
+function today() {
+  return getMoscowNow().toLocaleDateString('sv-SE');
+}
+
+function tomorrow() {
+  const d = getMoscowNow();
+  d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString('sv-SE');
+}
+
+/* ===================== TIME PARSE ===================== */
+
+// "8:00" -> минуты
+function parseTime(str: string) {
+  const [h, m] = str.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// дата + время -> timestamp (МСК)
+function getItemTime(item: Item, type: 'start' | 'end') {
+  const [h, m] = item[type].split(':').map(Number);
+
+  const base = new Date(
+    new Date(item.date).toLocaleString('en-US', {
+      timeZone: 'Europe/Moscow',
+    })
+  );
+
+  base.setHours(h, m, 0, 0);
+
+  return base.getTime();
+}
+
+// ISO дата -> YYYY-MM-DD (МСК)
 function getDay(iso: string) {
   return new Date(iso).toLocaleDateString('sv-SE', {
-    timeZone: 'Europe/Moscow',
-  });
-}
-
-// today YYYY-MM-DD
-function today() {
-  return new Date().toLocaleDateString('sv-SE', {
-    timeZone: 'Europe/Moscow',
-  });
-}
-
-// tomorrow YYYY-MM-DD
-function tomorrow() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toLocaleDateString('sv-SE', {
     timeZone: 'Europe/Moscow',
   });
 }
@@ -48,92 +66,101 @@ function tomorrow() {
 
 export default function Schedule() {
   const [data, setData] = useState<Item[]>([]);
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState(getMoscowNow());
 
-  const currentMin = now.getHours() * 60 + now.getMinutes();
-
+  // обновление времени
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30000);
+    const t = setInterval(() => setNow(getMoscowNow()), 30000);
     return () => clearInterval(t);
   }, []);
 
+  // загрузка
   useEffect(() => {
     fetch(URL)
       .then((r) => r.json())
-      .then((res) => {
-        setData(res || []);
-      })
+      .then((res) => setData(res || []))
       .catch(console.error);
   }, []);
 
-  /* ===================== FILTER TODAY + TOMORROW ===================== */
+  /* ===================== FILTER ===================== */
 
   const filtered = useMemo(() => {
+    const t = today();
+    const tm = tomorrow();
+
     return data.filter((i) => {
       const day = getDay(i.date);
-      return day === today() || day === tomorrow();
+      return day === t || day === tm;
     });
   }, [data]);
 
+  /* ===================== SORT ===================== */
+
   const sorted = useMemo(() => {
     return [...filtered].sort(
-      (a, b) => parseGoogleTime(a.start) - parseGoogleTime(b.start)
+      (a, b) => getItemTime(a, 'start') - getItemTime(b, 'start')
     );
   }, [filtered]);
 
-  /* ===================== ACTIVE LOGIC ===================== */
+  /* ===================== ACTIVE ===================== */
 
   const { before, active, after } = useMemo(() => {
     if (!sorted.length) return { before: [], active: null, after: [] };
-
-    let index = sorted.findIndex((i) => {
-      const s = parseGoogleTime(i.start);
-      const e = parseGoogleTime(i.end);
-      return currentMin >= s && currentMin <= e;
+  
+    const nowMs = now.getTime();
+  
+    let index = sorted.findIndex((item) => {
+      const start = getItemTime(item, 'start');
+      let end = getItemTime(item, 'end');
+  
+      // фикс 22:00–22:00
+      if (start === end) end = start + 5 * 60 * 1000;
+  
+      return nowMs >= start && nowMs <= end;
     });
-
+  
+    // если ничего не идёт — берём ближайшее будущее
     if (index === -1) {
-      index = sorted.findIndex((i) => parseGoogleTime(i.start) > currentMin);
+      index = sorted.findIndex(
+        (item) => getItemTime(item, 'start') > nowMs
+      );
     }
-
+  
+    // если вообще ничего нет — берём последнее
     if (index === -1) index = sorted.length - 1;
-
+  
     return {
-      before: sorted.slice(Math.max(0, index - 3), index),
-      active: sorted[index],
-      after: sorted.slice(index + 1, index + 4),
+      before: index > 0 ? [sorted[index - 1]] : [], // 👈 1 ДО
+      active: sorted[index],                        // 👈 1 АКТИВНОЕ
+      after: sorted.slice(index + 1, index + 3),    // 👈 2 ПОСЛЕ
     };
-  }, [sorted, currentMin]);
+  }, [sorted, now]);
 
   /* ===================== PROGRESS ===================== */
+
   function progress(item: Item) {
-    const s = parseGoogleTime(item.start);
-    const e = parseGoogleTime(item.end);
+    const nowMs = now.getTime();
 
-    // 🚨 защита от битых данных
-    if (!isFinite(s) || !isFinite(e)) return 0;
+    let start = getItemTime(item, 'start');
+    let end = getItemTime(item, 'end');
 
-    // 🚨 защита от нулевой длительности
-    if (e <= s) return 0;
+    if (start === end) end = start + 5 * 60 * 1000;
 
-    if (currentMin <= s) return 0;
-    if (currentMin >= e) return 100;
+    if (nowMs <= start) return 0;
+    if (nowMs >= end) return 100;
 
-    return ((currentMin - s) / (e - s)) * 100;
+    return ((nowMs - start) / (end - start)) * 100;
   }
 
   /* ===================== UI ===================== */
 
   const Card = ({ item, dim }: { item: Item; dim?: boolean }) => (
     <div
-      className={`
-        rounded-3xl p-4 border backdrop-blur-xl transition-all
-        ${
-          dim
-            ? 'bg-white/5 border-white/10 opacity-60'
-            : 'bg-white/10 border-white/20'
-        }
-      `}
+      className={`rounded-3xl p-4 border backdrop-blur-xl ${
+        dim
+          ? 'bg-white/5 border-white/10 opacity-60'
+          : 'bg-white/10 border-white/20'
+      }`}
     >
       <div className="flex items-center gap-2 text-xs text-white/60">
         <Clock size={14} />
@@ -162,7 +189,6 @@ export default function Schedule() {
         {item.start} – {item.end}
       </div>
 
-      {/* iOS STYLE PROGRESS */}
       <div className="h-2 bg-white/10 rounded-full mt-3 overflow-hidden">
         <div
           className="h-full bg-gradient-to-r from-lime-300 via-lime-400 to-green-400 transition-all duration-500"
