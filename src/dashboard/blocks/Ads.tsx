@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 
 const ads = [
-  {
-    img: '/ads/poster1.jpg',
-  },
-  {
-    img: '/ads/poster2.jpg',
-  },
+  { img: '/ads/poster1.jpg' },
+  { img: '/ads/poster2.jpg' },
+  { img: '/ads/poster3.jpg' },
+  { img: '/ads/poster4.jpg' },
 ];
 
 export default function Ads() {
@@ -31,8 +29,7 @@ export default function Ads() {
           alt=""
           className="w-full h-full object-cover transition-all duration-700"
         />
-
-        {/* затемнение (чтобы выглядело как экран) */}
+        {/* затемнение */}
         <div className="absolute inset-0 bg-black/10" />
       </div>
     </div>
