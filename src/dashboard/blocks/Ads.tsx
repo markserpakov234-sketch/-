@@ -5,6 +5,8 @@ const ads = [
   { img: '/ads/poster2.jpg' },
   { img: '/ads/poster3.jpg' },
   { img: '/ads/poster4.jpg' },
+  { img: '/ads/poster5.jpg' },
+  { img: '/ads/poster6.jpg' },
 ];
 
 export default function Ads() {
