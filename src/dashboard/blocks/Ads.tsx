@@ -15,7 +15,7 @@ export default function Ads() {
   useEffect(() => {
     const t = setInterval(() => {
       setIndex((i) => (i + 1) % ads.length);
-    }, 30000); // 30 секунд
+    }, 5000); // 30 секунд
 
     return () => clearInterval(t);
   }, []);
